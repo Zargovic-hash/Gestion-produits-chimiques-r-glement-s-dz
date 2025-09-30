@@ -1,0 +1,33 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Backend de l'application web dédiés à la gestion centralisée des produit dangereux sensibles en Algérie",
+  "keywords": [
+    "Produit",
+    "dangereux",
+    "sensibles",
+    "TASSAREH",
+    "Mines",
+    "Energies",
+    "Ministère",
+    "Autorisation",
+    "Agrément"
+  ],
+  "license": "ISC",
+  "author": "Zargovic",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "axios": "^1.12.2",
+    "bcrypt": "^6.0.0",
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3"
+  }
+}
