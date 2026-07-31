@@ -10,6 +10,8 @@ const dashboardRoutes = require('./routes/dashboard.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const reportRoutes = require('./routes/report.routes');
 const auditRoutes = require('./routes/audit.routes');
+const stockRoutes = require('./routes/stock.routes');
+const utilisationRoutes = require('./routes/utilisation.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -28,6 +30,8 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/stock', stockRoutes);
+app.use('/api/utilisations', utilisationRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Route non trouvée' });

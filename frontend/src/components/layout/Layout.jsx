@@ -32,6 +32,8 @@ export default function Layout() {
           <NavLink to="/" end className={navItemClass}>Tableau de bord</NavLink>
           <NavLink to="/autorisations" className={navItemClass}>Autorisations</NavLink>
           <NavLink to="/achats" className={navItemClass}>Achats</NavLink>
+          <NavLink to="/stock" className={navItemClass}>Stock</NavLink>
+          <NavLink to="/utilisations" className={navItemClass}>Utilisations</NavLink>
           <NavLink to="/rapports" className={navItemClass}>Rapports</NavLink>
           {user?.role === 'admin' && (
             <NavLink to="/canevas" className={navItemClass}>Canevas</NavLink>

@@ -14,6 +14,8 @@ import AchatsList from './pages/AchatsList';
 import UsersList from './pages/UsersList';
 import Reports from './pages/Reports';
 import AuditLog from './pages/AuditLog';
+import Stock from './pages/Stock';
+import UtilisationsList from './pages/UtilisationsList';
 
 export default function App() {
   return (
@@ -31,6 +33,8 @@ export default function App() {
               />
               <Route path="/autorisations/:id" element={<AutorisationDetail />} />
               <Route path="/achats" element={<AchatsList />} />
+              <Route path="/stock" element={<Stock />} />
+              <Route path="/utilisations" element={<UtilisationsList />} />
               <Route path="/rapports" element={<Reports />} />
               <Route
                 path="/canevas"
