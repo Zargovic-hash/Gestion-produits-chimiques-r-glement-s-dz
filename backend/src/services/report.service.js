@@ -85,7 +85,7 @@ const generatePdfTable = ({ title, subtitle, columns, rows }) => {
 /**
  * Rapport 2 : détail d'une autorisation (infos générales + produits + historique achats).
  */
-const generateAutorisationDetailPdf = ({ autorisation, produits, achats }) => {
+const generateAutorisationDetailPdf = ({ autorisation, produits, achats, utilisations }) => {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: PAGE_MARGIN, size: 'A4' });
     const chunks = [];
@@ -108,7 +108,7 @@ const generateAutorisationDetailPdf = ({ autorisation, produits, achats }) => {
     const pageWidth = doc.page.width - PAGE_MARGIN * 2;
 
     const drawTable = (heading, columns, rows) => {
-      doc.fontSize(12).fillColor('#001965').text(heading);
+      doc.fontSize(12).fillColor('#001965').text(heading, PAGE_MARGIN, doc.y, { width: pageWidth });
       doc.moveDown(0.3);
       let y = doc.y;
       const colWidth = pageWidth / columns.length;
@@ -150,7 +150,8 @@ const generateAutorisationDetailPdf = ({ autorisation, produits, achats }) => {
         { label: 'Désignation', value: (r) => r.designation_technique },
         { label: 'Qté Autorisée', value: (r) => `${r.quantite_autorisee} ${r.unite}` },
         { label: 'Qté Acquise', value: (r) => `${r.quantite_acquise} ${r.unite}` },
-        { label: 'Reste', value: (r) => `${r.reste_a_acquerir} ${r.unite}` },
+        { label: 'Qté Utilisée', value: (r) => `${r.quantite_utilisee} ${r.unite}` },
+        { label: 'Stock restant', value: (r) => `${r.stock_disponible} ${r.unite}` },
         { label: '% Acquis', value: (r) => `${r.pourcentage_acquis}%` },
       ],
       produits
@@ -166,6 +167,17 @@ const generateAutorisationDetailPdf = ({ autorisation, produits, achats }) => {
         { label: 'N° Facture', value: (r) => r.numero_facture },
       ],
       achats
+    );
+
+    drawTable(
+      'Historique des utilisations',
+      [
+        { label: 'Date', value: (r) => new Date(r.date_utilisation).toLocaleDateString('fr-FR') },
+        { label: 'Produit', value: (r) => r.designation_technique },
+        { label: 'Quantité', value: (r) => `${r.quantite_utilisee} ${r.unite}` },
+        { label: 'Objectif', value: (r) => r.objectif || '-' },
+      ],
+      utilisations
     );
 
     doc.end();

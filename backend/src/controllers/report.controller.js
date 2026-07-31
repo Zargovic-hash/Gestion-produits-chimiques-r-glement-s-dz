@@ -95,6 +95,7 @@ const autorisationDetailReport = async (req, res, next) => {
 
     const { rows: produits } = await query(
       `SELECT *, (quantite_autorisee - quantite_acquise) AS reste_a_acquerir,
+        (quantite_acquise - quantite_utilisee) AS stock_disponible,
         CASE WHEN quantite_autorisee > 0 THEN ROUND((quantite_acquise / quantite_autorisee) * 100, 2) ELSE 0 END AS pourcentage_acquis
        FROM autorisation_produits WHERE autorisation_id = $1 ORDER BY product_code`,
       [id]
@@ -105,8 +106,14 @@ const autorisationDetailReport = async (req, res, next) => {
        WHERE ap.autorisation_id = $1 ORDER BY a.date_achat DESC`,
       [id]
     );
+    const { rows: utilisations } = await query(
+      `SELECT u.*, ap.designation_technique, ap.unite
+       FROM utilisations u JOIN autorisation_produits ap ON ap.id = u.autorisation_produit_id
+       WHERE ap.autorisation_id = $1 ORDER BY u.date_utilisation DESC`,
+      [id]
+    );
 
-    const buffer = await generateAutorisationDetailPdf({ autorisation, produits, achats });
+    const buffer = await generateAutorisationDetailPdf({ autorisation, produits, achats, utilisations });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="autorisation_${autorisation.numero_autorisation}.pdf"`);
     res.send(buffer);
@@ -266,10 +273,82 @@ const departementsReport = async (req, res, next) => {
   }
 };
 
+// Rapport 6 : Déclaration Mensuelle par Autorisation
+// Récapitulatif, pour chaque autorisation et produit : achats du mois, utilisations
+// du mois, cumuls et stock restant en fin de mois.
+const declarationMensuelleReport = async (req, res, next) => {
+  try {
+    const { format = 'pdf', mois, autorisation_id } = req.query;
+    if (!mois || !/^\d{4}-\d{2}$/.test(mois)) {
+      throw new AppError('Le paramètre mois est requis, au format AAAA-MM', 400);
+    }
+    const debut = `${mois}-01`;
+
+    let sql = `
+      WITH achats_periode AS (
+        SELECT autorisation_produit_id,
+          COALESCE(SUM(quantite_acquise) FILTER (WHERE date_achat >= $1::date AND date_achat < ($1::date + INTERVAL '1 month')), 0) AS acquis_mois,
+          COALESCE(SUM(quantite_acquise) FILTER (WHERE date_achat < ($1::date + INTERVAL '1 month')), 0) AS cumul_acquis
+        FROM achats GROUP BY autorisation_produit_id
+      ),
+      utilisations_periode AS (
+        SELECT autorisation_produit_id,
+          COALESCE(SUM(quantite_utilisee) FILTER (WHERE date_utilisation >= $1::date AND date_utilisation < ($1::date + INTERVAL '1 month')), 0) AS utilise_mois,
+          COALESCE(SUM(quantite_utilisee) FILTER (WHERE date_utilisation < ($1::date + INTERVAL '1 month')), 0) AS cumul_utilise
+        FROM utilisations GROUP BY autorisation_produit_id
+      )
+      SELECT
+        au.numero_autorisation, ap.product_code, ap.designation_technique, ap.unite, ap.departement,
+        COALESCE(acp.acquis_mois, 0) AS acquis_mois,
+        COALESCE(utp.utilise_mois, 0) AS utilise_mois,
+        COALESCE(acp.cumul_acquis, 0) AS cumul_acquis,
+        COALESCE(utp.cumul_utilise, 0) AS cumul_utilise,
+        COALESCE(acp.cumul_acquis, 0) - COALESCE(utp.cumul_utilise, 0) AS stock_fin_mois
+      FROM autorisation_produits ap
+      JOIN autorisations au ON au.id = ap.autorisation_id
+      LEFT JOIN achats_periode acp ON acp.autorisation_produit_id = ap.id
+      LEFT JOIN utilisations_periode utp ON utp.autorisation_produit_id = ap.id
+      WHERE au.date_delivrance < ($1::date + INTERVAL '1 month')`;
+    const params = [debut];
+
+    if (autorisation_id) {
+      params.push(autorisation_id);
+      sql += ` AND au.id = $${params.length}`;
+    }
+    if (req.user.role === 'responsable_stock' && req.user.departement) {
+      params.push(req.user.departement);
+      sql += ` AND ap.departement = $${params.length}`;
+    }
+    sql += ' ORDER BY au.numero_autorisation, ap.product_code';
+
+    const { rows } = await query(sql, params);
+
+    await send(res, format, `declaration_mensuelle_${mois}`, {
+      title: `Rapport 6 — Déclaration Mensuelle (${mois})`,
+      subtitle: `${rows.length} ligne(s) produit × autorisation`,
+      columns: [
+        { label: 'N° Autorisation', value: (r) => r.numero_autorisation },
+        { label: 'Product ID', value: (r) => r.product_code },
+        { label: 'Désignation', value: (r) => r.designation_technique },
+        { label: 'Département', value: (r) => r.departement },
+        { label: 'Acquis (mois)', value: (r) => `${r.acquis_mois} ${r.unite}` },
+        { label: 'Utilisé (mois)', value: (r) => `${r.utilise_mois} ${r.unite}` },
+        { label: 'Cumul Acquis', value: (r) => `${r.cumul_acquis} ${r.unite}` },
+        { label: 'Cumul Utilisé', value: (r) => `${r.cumul_utilise} ${r.unite}` },
+        { label: 'Stock fin de mois', value: (r) => `${r.stock_fin_mois} ${r.unite}` },
+      ],
+      rows,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   autorisationsReport,
   autorisationDetailReport,
   achatsReport,
   produitsReport,
   departementsReport,
+  declarationMensuelleReport,
 };

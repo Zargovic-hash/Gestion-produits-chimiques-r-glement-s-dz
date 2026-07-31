@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getUtilisations, deleteUtilisation } from '../api/utilisation.api';
 
@@ -25,7 +26,7 @@ export default function UtilisationsList() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Historique des Utilisations</h1>
         <p className="text-sm text-gray-500">
-          Pour déclarer une utilisation, ouvrez la page Stock puis cliquez sur « + Déclarer utilisation ».
+          Pour déclarer une utilisation, ouvrez l'autorisation concernée puis cliquez sur « + Utilisation ».
         </p>
       </div>
 
@@ -39,6 +40,7 @@ export default function UtilisationsList() {
             <thead>
               <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
                 <th className="px-4 py-2">Date</th>
+                <th className="px-4 py-2">N° Autorisation</th>
                 <th className="px-4 py-2">Product ID</th>
                 <th className="px-4 py-2">Département</th>
                 <th className="px-4 py-2">Quantité</th>
@@ -51,6 +53,11 @@ export default function UtilisationsList() {
               {utilisations.map((u) => (
                 <tr key={u.id} className="border-b border-gray-100 last:border-0">
                   <td className="px-4 py-2">{new Date(u.date_utilisation).toLocaleDateString('fr-FR')}</td>
+                  <td className="px-4 py-2">
+                    <Link to={`/autorisations/${u.autorisation_id}`} className="text-primary-500 hover:underline">
+                      {u.numero_autorisation}
+                    </Link>
+                  </td>
                   <td className="px-4 py-2 font-mono text-xs">{u.product_code}</td>
                   <td className="px-4 py-2">{u.departement}</td>
                   <td className="px-4 py-2">{u.quantite_utilisee} {u.unite}</td>

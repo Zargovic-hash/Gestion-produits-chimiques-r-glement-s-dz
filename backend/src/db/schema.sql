@@ -88,7 +88,9 @@ CREATE TABLE IF NOT EXISTS autorisation_produits (
     departement VARCHAR(100) NOT NULL,
     quantite_autorisee NUMERIC(12, 3) NOT NULL CHECK (quantite_autorisee > 0),
     quantite_acquise NUMERIC(12, 3) NOT NULL DEFAULT 0 CHECK (quantite_acquise >= 0),
+    quantite_utilisee NUMERIC(12, 3) NOT NULL DEFAULT 0 CHECK (quantite_utilisee >= 0),
     CONSTRAINT no_overacquisition CHECK (quantite_acquise <= quantite_autorisee),
+    CONSTRAINT utilisee_ne_depasse_pas_acquise CHECK (quantite_utilisee <= quantite_acquise),
     UNIQUE (autorisation_id, product_code)
 );
 
@@ -233,13 +235,13 @@ CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at DESC);
 
 -- ============================================================
 -- PHASE 2 : UTILISATIONS / STOCK (spec §9.1)
+-- Une utilisation cible une autorisation_produit précise (comme un achat),
+-- ce qui permet de retracer Autorisation -> Achats -> Utilisations.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS utilisations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    product_code VARCHAR(50) NOT NULL,
-    departement VARCHAR(100) NOT NULL,
+    autorisation_produit_id UUID NOT NULL REFERENCES autorisation_produits(id) ON DELETE CASCADE,
     quantite_utilisee NUMERIC(12, 3) NOT NULL CHECK (quantite_utilisee > 0),
-    unite VARCHAR(20) NOT NULL CHECK (unite IN ('L', 'mL', 'kg', 'g', 't', 'unite')),
     date_utilisation DATE NOT NULL,
     objectif VARCHAR(255),
     remarques TEXT,
@@ -247,7 +249,7 @@ CREATE TABLE IF NOT EXISTS utilisations (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_utilisations_product ON utilisations(product_code, departement);
+CREATE INDEX IF NOT EXISTS idx_utilisations_autorisation_produit ON utilisations(autorisation_produit_id);
 CREATE INDEX IF NOT EXISTS idx_utilisations_date ON utilisations(date_utilisation);
 CREATE INDEX IF NOT EXISTS idx_utilisations_declare_par ON utilisations(declare_par);
 
@@ -261,38 +263,26 @@ CREATE TABLE IF NOT EXISTS seuils_stock (
     UNIQUE (product_code, departement)
 );
 
+-- Vue : stock disponible agrégé par produit / département, toutes autorisations confondues.
+-- (le détail par autorisation se lit directement sur autorisation_produits)
 CREATE OR REPLACE VIEW v_stock_produits AS
-WITH acquisitions AS (
-    SELECT ap.product_code, ap.departement,
-           MAX(ap.designation_technique) AS designation_technique,
-           MAX(ap.unite) AS unite,
-           COALESCE(SUM(ach.quantite_acquise), 0) AS quantite_acquise_totale
-    FROM autorisation_produits ap
-    LEFT JOIN achats ach ON ach.autorisation_produit_id = ap.id
-    GROUP BY ap.product_code, ap.departement
-),
-consommations AS (
-    SELECT product_code, departement, COALESCE(SUM(quantite_utilisee), 0) AS quantite_consommee_totale
-    FROM utilisations
-    GROUP BY product_code, departement
-)
 SELECT
-    a.product_code,
-    a.departement,
-    a.designation_technique,
-    a.unite,
-    a.quantite_acquise_totale,
-    COALESCE(c.quantite_consommee_totale, 0) AS quantite_consommee_totale,
-    a.quantite_acquise_totale - COALESCE(c.quantite_consommee_totale, 0) AS stock_disponible,
+    ap.product_code,
+    ap.departement,
+    MAX(ap.designation_technique) AS designation_technique,
+    MAX(ap.unite) AS unite,
+    SUM(ap.quantite_acquise) AS quantite_acquise_totale,
+    SUM(ap.quantite_utilisee) AS quantite_consommee_totale,
+    SUM(ap.quantite_acquise) - SUM(ap.quantite_utilisee) AS stock_disponible,
     COALESCE(s.stock_minimum, 0) AS stock_minimum,
     CASE
-        WHEN (a.quantite_acquise_totale - COALESCE(c.quantite_consommee_totale, 0)) <= COALESCE(s.stock_minimum, 0)
+        WHEN (SUM(ap.quantite_acquise) - SUM(ap.quantite_utilisee)) <= COALESCE(s.stock_minimum, 0)
             THEN 'CRITIQUE'
         WHEN COALESCE(s.stock_minimum, 0) > 0
-             AND (a.quantite_acquise_totale - COALESCE(c.quantite_consommee_totale, 0)) <= (COALESCE(s.stock_minimum, 0) * 1.5)
+             AND (SUM(ap.quantite_acquise) - SUM(ap.quantite_utilisee)) <= (COALESCE(s.stock_minimum, 0) * 1.5)
             THEN 'FAIBLE'
         ELSE 'OK'
     END AS statut
-FROM acquisitions a
-LEFT JOIN consommations c ON c.product_code = a.product_code AND c.departement = a.departement
-LEFT JOIN seuils_stock s ON s.product_code = a.product_code AND s.departement = a.departement;
+FROM autorisation_produits ap
+LEFT JOIN seuils_stock s ON s.product_code = ap.product_code AND s.departement = ap.departement
+GROUP BY ap.product_code, ap.departement, s.stock_minimum;

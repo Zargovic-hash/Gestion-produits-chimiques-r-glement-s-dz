@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   downloadAutorisationsReport,
   downloadAchatsReport,
   downloadProduitsReport,
   downloadDepartementsReport,
+  downloadDeclarationMensuelle,
 } from '../api/report.api';
+import { getAutorisations } from '../api/autorisation.api';
 import Button from '../components/common/Button';
 import Alert from '../components/common/Alert';
 
@@ -38,6 +40,14 @@ export default function Reports() {
   const [etat, setEtat] = useState('');
   const [dateDebut, setDateDebut] = useState('');
   const [dateFin, setDateFin] = useState('');
+
+  const [autorisations, setAutorisations] = useState([]);
+  const [moisDeclaration, setMoisDeclaration] = useState(new Date().toISOString().slice(0, 7));
+  const [autorisationDeclaration, setAutorisationDeclaration] = useState('');
+
+  useEffect(() => {
+    getAutorisations().then((res) => setAutorisations(res.data));
+  }, []);
 
   const runDownload = async (key, fn) => {
     setLoadingKey(key);
@@ -165,6 +175,43 @@ export default function Reports() {
             </div>
           </ReportCard>
         )}
+        <ReportCard
+          title="Déclaration Mensuelle"
+          description="Récapitulatif par autorisation et par produit : achats, utilisations et stock restant sur le mois choisi."
+        >
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="month" value={moisDeclaration} onChange={(e) => setMoisDeclaration(e.target.value)}
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+            />
+            <select
+              value={autorisationDeclaration}
+              onChange={(e) => setAutorisationDeclaration(e.target.value)}
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">Toutes les autorisations</option>
+              {autorisations.map((a) => (
+                <option key={a.id} value={a.id}>{a.numero_autorisation}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              disabled={loadingKey === 'mens-pdf'}
+              onClick={() => runDownload('mens-pdf', () => downloadDeclarationMensuelle({ mois: moisDeclaration, autorisation_id: autorisationDeclaration, format: 'pdf' }))}
+            >
+              {loadingKey === 'mens-pdf' ? '...' : 'PDF'}
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={loadingKey === 'mens-csv'}
+              onClick={() => runDownload('mens-csv', () => downloadDeclarationMensuelle({ mois: moisDeclaration, autorisation_id: autorisationDeclaration, format: 'csv' }))}
+            >
+              {loadingKey === 'mens-csv' ? '...' : 'CSV'}
+            </Button>
+          </div>
+        </ReportCard>
       </div>
 
       <p className="text-xs text-gray-400">

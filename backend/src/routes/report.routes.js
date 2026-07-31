@@ -10,5 +10,6 @@ router.get('/autorisations/:id', reportController.autorisationDetailReport);
 router.get('/achats', reportController.achatsReport);
 router.get('/produits', reportController.produitsReport);
 router.get('/departements', reportController.departementsReport);
+router.get('/declaration-mensuelle', reportController.declarationMensuelleReport);
 
 module.exports = router;

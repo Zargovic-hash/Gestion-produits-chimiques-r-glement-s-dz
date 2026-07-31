@@ -43,3 +43,6 @@ export const downloadProduitsReport = (params) =>
 
 export const downloadDepartementsReport = (params) =>
   download('/reports/departements', params, 'rapport_departements.pdf');
+
+export const downloadDeclarationMensuelle = (params) =>
+  download('/reports/declaration-mensuelle', params, 'declaration_mensuelle.pdf');

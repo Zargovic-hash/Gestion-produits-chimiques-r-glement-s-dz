@@ -72,9 +72,13 @@ const getById = async (req, res, next) => {
     const { rows: produits } = await query(
       `SELECT *,
         (quantite_autorisee - quantite_acquise) AS reste_a_acquerir,
+        (quantite_acquise - quantite_utilisee) AS stock_disponible,
         CASE WHEN quantite_autorisee > 0
           THEN ROUND((quantite_acquise / quantite_autorisee) * 100, 2)
-          ELSE 0 END AS pourcentage_acquis
+          ELSE 0 END AS pourcentage_acquis,
+        CASE WHEN quantite_acquise > 0
+          THEN ROUND((quantite_utilisee / quantite_acquise) * 100, 2)
+          ELSE 0 END AS pourcentage_utilise
        FROM autorisation_produits WHERE autorisation_id = $1 ORDER BY product_code`,
       [id]
     );
@@ -88,7 +92,16 @@ const getById = async (req, res, next) => {
       [id]
     );
 
-    res.json({ success: true, data: { ...withLabel(rows[0]), produits, achats } });
+    const { rows: utilisations } = await query(
+      `SELECT u.*, ap.product_code, ap.designation_technique, ap.unite
+       FROM utilisations u
+       JOIN autorisation_produits ap ON ap.id = u.autorisation_produit_id
+       WHERE ap.autorisation_id = $1
+       ORDER BY u.date_utilisation DESC, u.created_at DESC`,
+      [id]
+    );
+
+    res.json({ success: true, data: { ...withLabel(rows[0]), produits, achats, utilisations } });
   } catch (error) {
     next(error);
   }

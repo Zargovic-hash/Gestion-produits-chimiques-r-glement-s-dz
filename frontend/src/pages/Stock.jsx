@@ -1,28 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getStock, upsertSeuil } from '../api/stock.api';
-import { createUtilisation } from '../api/utilisation.api';
 import StatutStockBadge from '../components/common/StatutStockBadge';
-import Button from '../components/common/Button';
-import Alert from '../components/common/Alert';
-
-const emptyForm = { quantite_utilisee: '', date_utilisation: new Date().toISOString().split('T')[0], objectif: '', remarques: '' };
 
 export default function Stock() {
   const { user } = useAuth();
   const [stock, setStock] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
 
-  const [utilForm, setUtilForm] = useState(null); // produit en cours de déclaration
-  const [formData, setFormData] = useState(emptyForm);
-  const [submitting, setSubmitting] = useState(false);
-
-  const [seuilEdit, setSeuilEdit] = useState(null); // produit en cours d'édition de seuil
+  const [seuilEdit, setSeuilEdit] = useState(null);
   const [seuilValue, setSeuilValue] = useState('');
-
-  const canDeclarer = user.role === 'admin' || user.role === 'responsable_stock';
 
   const load = () => {
     setLoading(true);
@@ -30,34 +17,6 @@ export default function Stock() {
   };
 
   useEffect(load, []);
-
-  const openUtilForm = (produit) => {
-    setUtilForm(produit);
-    setFormData(emptyForm);
-    setError('');
-    setSuccess('');
-  };
-
-  const handleUtilSubmit = async (e) => {
-    e.preventDefault();
-    setSubmitting(true);
-    setError('');
-    try {
-      await createUtilisation({
-        product_code: utilForm.product_code,
-        departement: utilForm.departement,
-        unite: utilForm.unite,
-        ...formData,
-      });
-      setSuccess('Utilisation enregistrée avec succès.');
-      setUtilForm(null);
-      load();
-    } catch (err) {
-      setError(err.response?.data?.message || "Erreur lors de l'enregistrement");
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const openSeuilEdit = (produit) => {
     setSeuilEdit(produit);
@@ -78,10 +37,9 @@ export default function Stock() {
     <div className="space-y-4">
       <h1 className="text-2xl font-bold text-gray-900">Stock</h1>
       <p className="text-sm text-gray-500">
-        Stock disponible = quantités acquises (achats) − quantités déclarées comme utilisées.
+        Vue agrégée par produit / département, toutes autorisations confondues (Σ acquis − Σ utilisé).
+        Pour déclarer un achat ou une utilisation, ouvrez l'autorisation concernée.
       </p>
-
-      <Alert type="success">{success}</Alert>
 
       {loading ? (
         <div className="text-gray-500">Chargement...</div>
@@ -95,12 +53,11 @@ export default function Stock() {
                 <th className="px-4 py-2">Product ID</th>
                 <th className="px-4 py-2">Désignation</th>
                 <th className="px-4 py-2">Département</th>
-                <th className="px-4 py-2">Acquis</th>
-                <th className="px-4 py-2">Consommé</th>
+                <th className="px-4 py-2">Acquis (total)</th>
+                <th className="px-4 py-2">Consommé (total)</th>
                 <th className="px-4 py-2">Disponible</th>
                 <th className="px-4 py-2">Seuil min.</th>
                 <th className="px-4 py-2">Statut</th>
-                <th className="px-4 py-2"></th>
               </tr>
             </thead>
             <tbody>
@@ -132,75 +89,10 @@ export default function Stock() {
                     )}
                   </td>
                   <td className="px-4 py-2"><StatutStockBadge statut={p.statut} /></td>
-                  <td className="px-4 py-2">
-                    {canDeclarer && (
-                      <button
-                        onClick={() => openUtilForm(p)}
-                        disabled={parseFloat(p.stock_disponible) <= 0}
-                        className="text-primary-500 text-xs font-medium hover:underline disabled:text-gray-300 disabled:no-underline"
-                      >
-                        + Déclarer utilisation
-                      </button>
-                    )}
-                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
-      )}
-
-      {utilForm && (
-        <div className="bg-white rounded-lg shadow p-4 border-2 border-primary-100">
-          <h2 className="text-sm font-semibold text-gray-900 mb-3">
-            Déclarer une utilisation — {utilForm.designation_technique} ({utilForm.departement})
-            {' '}<span className="text-gray-400 font-normal">(disponible : {utilForm.stock_disponible} {utilForm.unite})</span>
-          </h2>
-          <Alert type="error">{error}</Alert>
-          <form onSubmit={handleUtilSubmit} className="grid grid-cols-2 gap-3 mt-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Quantité utilisée *</label>
-              <input
-                type="number" step="0.001" min="0.001" required
-                value={formData.quantite_utilisee}
-                onChange={(e) => setFormData({ ...formData, quantite_utilisee: e.target.value })}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Date d'utilisation *</label>
-              <input
-                type="date" required
-                value={formData.date_utilisation}
-                onChange={(e) => setFormData({ ...formData, date_utilisation: e.target.value })}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-xs font-medium text-gray-700 mb-1">Objectif / Projet</label>
-              <input
-                value={formData.objectif}
-                onChange={(e) => setFormData({ ...formData, objectif: e.target.value })}
-                placeholder="ex : Synthèse expérience #12"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-xs font-medium text-gray-700 mb-1">Remarques</label>
-              <textarea
-                value={formData.remarques}
-                onChange={(e) => setFormData({ ...formData, remarques: e.target.value })}
-                rows={2}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div className="col-span-2 flex gap-3 justify-end">
-              <Button type="button" variant="secondary" onClick={() => setUtilForm(null)}>Annuler</Button>
-              <Button type="submit" disabled={submitting}>
-                {submitting ? 'Enregistrement...' : "Enregistrer l'utilisation"}
-              </Button>
-            </div>
-          </form>
         </div>
       )}
     </div>
