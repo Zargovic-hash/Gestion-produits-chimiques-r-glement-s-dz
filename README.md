@@ -2,13 +2,23 @@
 
 Application de gestion du cycle d'acquisition des produits chimiques réglementés (Algérie), construite autour du modèle **Canevas → Autorisation → Achat** décrit dans `Description of the Web App/descriptif non technique.pdf`.
 
-Périmètre actuel : Phase 1 (Acquisition) uniquement — création de Canevas, création d'Autorisations, enregistrement des Achats, suivi des états et tableau de bord.
+Périmètre actuel : Phase 1 (Acquisition) — Canevas, Autorisations, Achats, alertes/notifications, rapports (PDF/CSV), tableau de bord avec graphiques, piste d'audit.
 
 ## Stack
 
 - **Backend** : Node.js + Express + PostgreSQL (driver `pg`, sans ORM)
-- **Frontend** : React (Vite) + Tailwind CSS + React Router
-- **Auth** : JWT, 3 rôles (`admin`, `responsable_stock`, `visiteur`)
+- **Frontend** : React (Vite) + Tailwind CSS + React Router + Recharts
+- **Auth** : JWT, 3 rôles (`admin`, `responsable_stock`, `visiteur`), déconnexion automatique après 30 min d'inactivité
+
+## Fonctionnalités
+
+- **Canevas** : modèles de produits réutilisables, immuables après création (duplication possible)
+- **Autorisations** : création depuis un Canevas ou manuellement, état calculé dynamiquement (Active / Presque Épuisée / Épuisée / Presque Expirée / Expirée), archivage manuel des autorisations expirées
+- **Achats** : enregistrement transactionnel avec verrou de ligne, blocage si dépassement de quantité ou autorisation expirée ; modification/suppression réservées au créateur ou à un admin
+- **Notifications** : alertes automatiques (seuils 80/90 %, échéance ≤ 30 jours) déclenchées à chaque achat et vérifiées quotidiennement par un scheduler ; cloche in-app avec compteur
+- **Rapports** : 5 rapports (État des Autorisations, Détail d'une Autorisation, Historique des Achats, Produits les Plus Acquis, Performance par Département), export PDF et CSV
+- **Tableau de bord** : répartition par état (camembert), % moyen d'acquisition (jauge), évolution des achats (courbe), top 10 produits (barres) ; vue restreinte pour le Responsable Stock (son département) et le Visiteur (pas de détail nominatif)
+- **Piste d'audit** : traçabilité qui/quoi/quand des créations, modifications et suppressions, consultable par l'administrateur
 
 ## Prérequis
 
@@ -25,6 +35,12 @@ Créer un rôle et une base dédiés, puis appliquer le schéma :
 psql -U postgres -c "CREATE ROLE chemapp LOGIN PASSWORD 'votre_mot_de_passe';"
 psql -U postgres -c "CREATE DATABASE gestion_chimique OWNER chemapp;"
 psql -U chemapp -d gestion_chimique -f backend/src/db/schema.sql
+```
+
+`schema.sql` contient l'intégralité du schéma (y compris notifications et audit_logs). Si une base existante a été créée avant l'ajout de ces tables, appliquer uniquement la migration :
+
+```bash
+psql -U chemapp -d gestion_chimique -f backend/src/db/migration_002_notifications.sql
 ```
 
 ### 2. Backend
@@ -61,27 +77,31 @@ npm run dev              # démarre sur http://localhost:5173
 ```
 backend/
   src/
-    config/db.js            # pool PostgreSQL + helper de transaction
-    db/schema.sql            # schéma complet (tables, fonction d'état, vue)
-    middleware/               # auth JWT, contrôle de rôle, gestion d'erreurs
-    controllers/ + routes/    # canevas, autorisations, achats, users, dashboard
-  scripts/seed.js            # utilisateurs de démo + canevas par défaut
+    config/db.js              # pool PostgreSQL + helper de transaction
+    db/schema.sql              # schéma complet (tables, fonction d'état, vue)
+    db/migration_002_*.sql     # migration incrémentale (notifications + audit_logs)
+    middleware/                 # auth JWT, contrôle de rôle, gestion d'erreurs
+    services/                   # alertes, notifications, rapports (PDF/CSV), audit, scheduler
+    controllers/ + routes/      # canevas, autorisations, achats, users, dashboard, reports, notifications, audit
+  scripts/seed.js              # utilisateurs de démo + canevas par défaut
 
 frontend/
   src/
-    api/                      # client axios + appels par ressource
-    context/AuthContext.jsx   # session utilisateur
-    components/                # composants réutilisables (badges, formulaires produits, layout)
-    pages/                     # Login, Dashboard, Canevas, Autorisations, Achats, Utilisateurs
+    api/                        # client axios + appels par ressource
+    context/AuthContext.jsx     # session utilisateur
+    hooks/useIdleLogout.js       # déconnexion automatique
+    components/                  # composants réutilisables (badges, formulaires produits, layout, notifications)
+    pages/                       # Login, Dashboard, Canevas, Autorisations, Achats, Rapports, Utilisateurs, Piste d'audit
 ```
 
 ## Notes de conception
 
 - Les **Canevas** sont immuables après création (conformément à la spec) : pas d'endpoint de modification, uniquement duplication.
-- L'**état d'une Autorisation** (`Active`, `Presque Épuisée`, `Épuisée`, `Presque Expirée`, `Expirée`) est calculé côté base via une fonction SQL (`calculer_etat_autorisation`), jamais stocké en dur — il est donc toujours à jour.
+- L'**état d'une Autorisation** est calculé côté base via une fonction SQL (`calculer_etat_autorisation`), jamais stocké en dur — il est donc toujours à jour.
 - L'enregistrement d'un **Achat** est transactionnel avec verrou de ligne (`FOR UPDATE`) pour empêcher les dépassements de quantité en cas d'accès concurrent.
-- Le **Responsable Stock** ne voit que les autorisations/achats de son département ; le **Visiteur** est en lecture seule sur tout ; l'**Administrateur** a accès complet.
+- Le **Responsable Stock** ne voit que les autorisations/achats/rapports de son département ; le **Visiteur** est en lecture seule sur tout, sans détail nominatif ; l'**Administrateur** a accès complet.
+- Les **notifications** sont dédupliquées sur une fenêtre de 24h par (utilisateur, autorisation, type) pour éviter le spam.
 
 ## Hors périmètre (Phase 2, cf. spec non technique §9)
 
-Suivi de consommation/stock, intégrations ERP, rapports PDF/Excel/CSV, envoi d'emails, application mobile — non implémentés dans cette version MVP.
+Suivi de consommation/stock, intégrations ERP, envoi d'emails (les notifications sont in-app uniquement), application mobile — non implémentés dans cette version.

@@ -1,5 +1,8 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { useCallback } from 'react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth, ROLE_LABELS } from '../../context/AuthContext';
+import { useIdleLogout } from '../../hooks/useIdleLogout';
+import NotificationBell from '../notification/NotificationBell';
 
 const navItemClass = ({ isActive }) =>
   `block px-3 py-2 rounded-md text-sm font-medium ${
@@ -8,6 +11,14 @@ const navItemClass = ({ isActive }) =>
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleIdle = useCallback(() => {
+    logout();
+    navigate('/login');
+  }, [logout, navigate]);
+
+  useIdleLogout(handleIdle);
 
   return (
     <div className="min-h-screen flex bg-gray-50">
@@ -21,11 +32,15 @@ export default function Layout() {
           <NavLink to="/" end className={navItemClass}>Tableau de bord</NavLink>
           <NavLink to="/autorisations" className={navItemClass}>Autorisations</NavLink>
           <NavLink to="/achats" className={navItemClass}>Achats</NavLink>
+          <NavLink to="/rapports" className={navItemClass}>Rapports</NavLink>
           {user?.role === 'admin' && (
             <NavLink to="/canevas" className={navItemClass}>Canevas</NavLink>
           )}
           {user?.role === 'admin' && (
             <NavLink to="/utilisateurs" className={navItemClass}>Utilisateurs</NavLink>
+          )}
+          {user?.role === 'admin' && (
+            <NavLink to="/audit" className={navItemClass}>Piste d'audit</NavLink>
           )}
         </nav>
         <div className="p-3 border-t border-gray-200">
@@ -39,8 +54,13 @@ export default function Layout() {
           </button>
         </div>
       </aside>
-      <main className="flex-1 p-6 overflow-auto">
-        <Outlet />
+      <main className="flex-1 overflow-auto">
+        <div className="flex justify-end px-6 pt-4">
+          <NotificationBell />
+        </div>
+        <div className="p-6 pt-2">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getAutorisationById, deleteAutorisation } from '../api/autorisation.api';
-import { createAchat } from '../api/achat.api';
+import { getAutorisationById, deleteAutorisation, updateAutorisation } from '../api/autorisation.api';
+import { createAchat, deleteAchat } from '../api/achat.api';
+import { downloadAutorisationDetailReport } from '../api/report.api';
 import { useAuth } from '../context/AuthContext';
 import EtatBadge from '../components/common/EtatBadge';
 import ProgressBar from '../components/common/ProgressBar';
@@ -58,6 +59,18 @@ export default function AutorisationDetail() {
     navigate('/autorisations');
   };
 
+  const handleArchive = async () => {
+    if (!window.confirm('Archiver cette autorisation expirée ?')) return;
+    await updateAutorisation(id, { is_archived: true });
+    navigate('/autorisations');
+  };
+
+  const handleDeleteAchat = async (achatId) => {
+    if (!window.confirm('Supprimer cet achat ? Les quantités seront recalculées.')) return;
+    await deleteAchat(achatId);
+    load();
+  };
+
   if (loading) return <div className="text-gray-500">Chargement...</div>;
   if (!autorisation) return <div className="text-gray-500">Autorisation introuvable.</div>;
 
@@ -77,9 +90,19 @@ export default function AutorisationDetail() {
             {' '}{autorisation.jours_restants} jour(s) restant(s) · {autorisation.type_marche}
           </p>
         </div>
-        {user.role === 'admin' && (
-          <Button variant="danger" onClick={handleDelete}>Supprimer</Button>
-        )}
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => downloadAutorisationDetailReport(id)}>
+            Télécharger le rapport (PDF)
+          </Button>
+          {user.role === 'admin' && (
+            <>
+              {autorisation.etat === 'EXPIREE' && !autorisation.is_archived && (
+                <Button variant="secondary" onClick={handleArchive}>Archiver</Button>
+              )}
+              <Button variant="danger" onClick={handleDelete}>Supprimer</Button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="bg-white rounded-lg shadow p-4">
@@ -203,6 +226,7 @@ export default function AutorisationDetail() {
                 <th className="px-4 py-2">Quantité</th>
                 <th className="px-4 py-2">Fournisseur</th>
                 <th className="px-4 py-2">N° Facture</th>
+                <th className="px-4 py-2"></th>
               </tr>
             </thead>
             <tbody>
@@ -213,6 +237,16 @@ export default function AutorisationDetail() {
                   <td className="px-4 py-2">{a.quantite_acquise} {a.unite}</td>
                   <td className="px-4 py-2">{a.fournisseur}</td>
                   <td className="px-4 py-2">{a.numero_facture}</td>
+                  <td className="px-4 py-2">
+                    {(user.role === 'admin' || a.enregistre_par === user.id) && (
+                      <button
+                        onClick={() => handleDeleteAchat(a.id)}
+                        className="text-xs text-red-600 hover:underline"
+                      >
+                        Supprimer
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

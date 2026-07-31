@@ -1,6 +1,7 @@
 const bcrypt = require('bcrypt');
 const { query } = require('../config/db');
 const AppError = require('../utils/AppError');
+const { logAction } = require('../services/audit.service');
 
 const ROLES = ['admin', 'responsable_stock', 'visiteur'];
 
@@ -38,6 +39,8 @@ const create = async (req, res, next) => {
        RETURNING id, email, nom, prenom, role, departement, is_active, created_at`,
       [email.toLowerCase().trim(), passwordHash, nom, prenom, role, departement || null, req.user.id]
     );
+
+    await logAction(req.user.id, 'CREATE', 'utilisateur', rows[0].id, { email: rows[0].email, role });
 
     res.status(201).json({ success: true, data: rows[0] });
   } catch (error) {
@@ -91,6 +94,10 @@ const update = async (req, res, next) => {
     if (rows.length === 0) {
       throw new AppError('Utilisateur non trouvé', 404);
     }
+
+    // Ne jamais consigner le mot de passe, même haché, dans la piste d'audit
+    const { password: _omit, ...auditDetails } = req.body;
+    await logAction(req.user.id, 'UPDATE', 'utilisateur', id, auditDetails);
 
     res.json({ success: true, data: rows[0] });
   } catch (error) {

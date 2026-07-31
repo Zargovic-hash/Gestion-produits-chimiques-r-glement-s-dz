@@ -1,6 +1,7 @@
 const { query, withTransaction } = require('../config/db');
 const AppError = require('../utils/AppError');
 const { calculerDateEcheance, ETAT_LABELS } = require('../utils/calculations');
+const { logAction } = require('../services/audit.service');
 
 const UNITES = ['L', 'mL', 'kg', 'g', 't', 'unite'];
 const TYPES_MARCHE = ['Local', 'International'];
@@ -165,6 +166,10 @@ const create = async (req, res, next) => {
       autorisation.id,
     ]);
 
+    await logAction(req.user.id, 'CREATE', 'autorisation', autorisation.id, {
+      numero_autorisation: autorisation.numero_autorisation,
+    });
+
     res
       .status(201)
       .json({ success: true, data: withLabel(full[0]), message: 'Autorisation créée avec succès' });
@@ -207,6 +212,8 @@ const update = async (req, res, next) => {
     );
     if (rows.length === 0) throw new AppError('Autorisation non trouvée', 404);
 
+    await logAction(req.user.id, 'UPDATE', 'autorisation', id, req.body);
+
     const { rows: full } = await query('SELECT * FROM v_autorisations WHERE id = $1', [id]);
     res.json({ success: true, data: withLabel(full[0]) });
   } catch (error) {
@@ -219,6 +226,7 @@ const remove = async (req, res, next) => {
     const { id } = req.params;
     const { rows } = await query('DELETE FROM autorisations WHERE id = $1 RETURNING id', [id]);
     if (rows.length === 0) throw new AppError('Autorisation non trouvée', 404);
+    await logAction(req.user.id, 'DELETE', 'autorisation', id);
     res.json({ success: true, message: 'Autorisation supprimée (achats associés supprimés)' });
   } catch (error) {
     next(error);

@@ -1,5 +1,7 @@
 const { query, withTransaction } = require('../config/db');
 const AppError = require('../utils/AppError');
+const { checkAutorisationAlerts } = require('../services/alert.service');
+const { logAction } = require('../services/audit.service');
 
 const getAll = async (req, res, next) => {
   try {
@@ -109,6 +111,16 @@ const create = async (req, res, next) => {
       return { achat: achatRows[0], produit, resteDisponible: resteDisponible - qte };
     });
 
+    // Vérification des seuils d'alerte (spec §4.4) - ne bloque pas la réponse en cas d'échec
+    checkAutorisationAlerts(achat.produit.autorisation_id).catch((err) =>
+      console.error('Erreur lors de la génération des alertes :', err)
+    );
+
+    await logAction(req.user.id, 'CREATE', 'achat', achat.achat.id, {
+      autorisation_produit_id,
+      quantite_acquise: qte,
+    });
+
     res.status(201).json({
       success: true,
       data: achat.achat,
@@ -120,10 +132,23 @@ const create = async (req, res, next) => {
   }
 };
 
+const assertOwnerOrAdmin = async (achatId, user) => {
+  const { rows } = await query('SELECT enregistre_par FROM achats WHERE id = $1', [achatId]);
+  if (rows.length === 0) throw new AppError('Achat non trouvé', 404);
+  if (user.role !== 'admin' && rows[0].enregistre_par !== user.id) {
+    throw new AppError(
+      "Seul le Responsable Stock qui a créé cet achat ou un administrateur peut le modifier",
+      403
+    );
+  }
+};
+
 const update = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { fournisseur, numero_facture, remarques, date_achat } = req.body;
+
+    await assertOwnerOrAdmin(id, req.user);
 
     const fields = [];
     const values = [];
@@ -140,6 +165,8 @@ const update = async (req, res, next) => {
       values
     );
     if (rows.length === 0) throw new AppError('Achat non trouvé', 404);
+
+    await logAction(req.user.id, 'UPDATE', 'achat', id, req.body);
 
     res.json({ success: true, data: rows[0] });
   } catch (error) {
@@ -159,6 +186,13 @@ const remove = async (req, res, next) => {
       if (rows.length === 0) throw new AppError('Achat non trouvé', 404);
       const achat = rows[0];
 
+      if (req.user.role !== 'admin' && achat.enregistre_par !== req.user.id) {
+        throw new AppError(
+          "Seul le Responsable Stock qui a créé cet achat ou un administrateur peut le supprimer",
+          403
+        );
+      }
+
       await client.query('DELETE FROM achats WHERE id = $1', [id]);
 
       // Recalcul de la quantité acquise (recul de l'achat supprimé)
@@ -167,6 +201,8 @@ const remove = async (req, res, next) => {
         [achat.quantite_acquise, achat.autorisation_produit_id]
       );
     });
+
+    await logAction(req.user.id, 'DELETE', 'achat', id);
 
     res.json({ success: true, message: 'Achat supprimé et quantités recalculées' });
   } catch (error) {

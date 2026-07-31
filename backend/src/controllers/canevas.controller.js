@@ -1,5 +1,6 @@
 const { query, withTransaction } = require('../config/db');
 const AppError = require('../utils/AppError');
+const { logAction } = require('../services/audit.service');
 
 const UNITES = ['L', 'mL', 'kg', 'g', 't', 'unite'];
 
@@ -88,6 +89,8 @@ const create = async (req, res, next) => {
       return c;
     });
 
+    await logAction(req.user.id, 'CREATE', 'canevas', canevas.id, { nom: canevas.nom });
+
     res.status(201).json({ success: true, data: canevas, message: 'Canevas créé avec succès' });
   } catch (error) {
     next(error);
@@ -153,6 +156,7 @@ const remove = async (req, res, next) => {
     }
 
     await query('DELETE FROM canevas WHERE id = $1', [id]);
+    await logAction(req.user.id, 'DELETE', 'canevas', id);
     res.json({ success: true, message: 'Canevas supprimé' });
   } catch (error) {
     next(error);
