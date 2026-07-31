@@ -2,18 +2,27 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getUtilisations, deleteUtilisation } from '../api/utilisation.api';
+import { getAutorisations } from '../api/autorisation.api';
 
 export default function UtilisationsList() {
   const { user } = useAuth();
   const [utilisations, setUtilisations] = useState([]);
+  const [autorisations, setAutorisations] = useState([]);
+  const [autorisationId, setAutorisationId] = useState('');
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getAutorisations().then((res) => setAutorisations(res.data));
+  }, []);
 
   const load = () => {
     setLoading(true);
-    getUtilisations().then((res) => setUtilisations(res.data)).finally(() => setLoading(false));
+    getUtilisations(autorisationId ? { autorisation_id: autorisationId } : {})
+      .then((res) => setUtilisations(res.data))
+      .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(load, [autorisationId]);
 
   const handleDelete = async (id) => {
     if (!window.confirm('Supprimer cette déclaration d\'utilisation ?')) return;
@@ -30,10 +39,24 @@ export default function UtilisationsList() {
         </p>
       </div>
 
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Filtrer par autorisation</label>
+        <select
+          value={autorisationId}
+          onChange={(e) => setAutorisationId(e.target.value)}
+          className="w-full md:w-80 rounded-md border border-gray-300 px-3 py-2 text-sm"
+        >
+          <option value="">Toutes les autorisations</option>
+          {autorisations.map((a) => (
+            <option key={a.id} value={a.id}>{a.numero_autorisation}</option>
+          ))}
+        </select>
+      </div>
+
       {loading ? (
         <div className="text-gray-500">Chargement...</div>
       ) : utilisations.length === 0 ? (
-        <div className="text-gray-500">Aucune utilisation déclarée.</div>
+        <div className="text-gray-500">Aucune utilisation déclarée{autorisationId ? ' pour cette autorisation' : ''}.</div>
       ) : (
         <div className="bg-white rounded-lg shadow overflow-x-auto">
           <table className="w-full text-sm">

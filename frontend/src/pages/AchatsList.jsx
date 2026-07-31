@@ -1,28 +1,52 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getAchats } from '../api/achat.api';
+import { getAutorisations } from '../api/autorisation.api';
 
 export default function AchatsList() {
   const [achats, setAchats] = useState([]);
+  const [autorisations, setAutorisations] = useState([]);
+  const [autorisationId, setAutorisationId] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getAchats().then((res) => setAchats(res.data)).finally(() => setLoading(false));
+    getAutorisations().then((res) => setAutorisations(res.data));
   }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    getAchats(autorisationId ? { autorisation_id: autorisationId } : {})
+      .then((res) => setAchats(res.data))
+      .finally(() => setLoading(false));
+  }, [autorisationId]);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Historique des Achats</h1>
         <p className="text-sm text-gray-500">
-          Pour enregistrer un achat, ouvrez une autorisation puis cliquez sur « + Nouvel Achat ».
+          Pour enregistrer un achat, ouvrez une autorisation puis cliquez sur « + Achat ».
         </p>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Filtrer par autorisation</label>
+        <select
+          value={autorisationId}
+          onChange={(e) => setAutorisationId(e.target.value)}
+          className="w-full md:w-80 rounded-md border border-gray-300 px-3 py-2 text-sm"
+        >
+          <option value="">Toutes les autorisations</option>
+          {autorisations.map((a) => (
+            <option key={a.id} value={a.id}>{a.numero_autorisation}</option>
+          ))}
+        </select>
       </div>
 
       {loading ? (
         <div className="text-gray-500">Chargement...</div>
       ) : achats.length === 0 ? (
-        <div className="text-gray-500">Aucun achat enregistré.</div>
+        <div className="text-gray-500">Aucun achat enregistré{autorisationId ? ' pour cette autorisation' : ''}.</div>
       ) : (
         <div className="bg-white rounded-lg shadow overflow-x-auto">
           <table className="w-full text-sm">

@@ -311,11 +311,14 @@ const declarationMensuelleReport = async (req, res, next) => {
         FROM utilisations GROUP BY autorisation_produit_id
       )
       SELECT
-        au.numero_autorisation, ap.product_code, ap.designation_technique, ap.unite, ap.departement,
+        au.numero_autorisation,
+        ap.product_code, ap.designation_technique, ap.numero_onu, ap.numero_cas, ap.numero_cee,
+        ap.designation_chimique, ap.unite, ap.departement, ap.quantite_autorisee,
         COALESCE(acp.acquis_mois, 0) AS acquis_mois,
         COALESCE(utp.utilise_mois, 0) AS utilise_mois,
         COALESCE(acp.cumul_acquis, 0) AS cumul_acquis,
         COALESCE(utp.cumul_utilise, 0) AS cumul_utilise,
+        ap.quantite_autorisee - COALESCE(acp.cumul_acquis, 0) AS quantite_restante,
         COALESCE(acp.cumul_acquis, 0) - COALESCE(utp.cumul_utilise, 0) AS stock_fin_mois
       FROM autorisation_produits ap
       JOIN autorisations au ON au.id = ap.autorisation_id
@@ -338,17 +341,20 @@ const declarationMensuelleReport = async (req, res, next) => {
 
     await send(res, format, `declaration_mensuelle_${mois}`, {
       title: `Rapport 6 — Déclaration Mensuelle (${mois})`,
-      subtitle: `${rows.length} ligne(s) produit × autorisation`,
+      subtitle: `${rows.length} ligne(s) produit × autorisation — mouvements du mois choisi`,
       columns: [
-        { label: 'N° Autorisation', value: (r) => r.numero_autorisation },
-        { label: 'Product ID', value: (r) => r.product_code },
-        { label: 'Désignation', value: (r) => r.designation_technique },
+        { label: 'Désignation technique', value: (r) => r.designation_technique },
+        { label: 'N° ONU', value: (r) => r.numero_onu || '-' },
+        { label: 'N° CAS', value: (r) => r.numero_cas || '-' },
+        { label: 'N° CEE', value: (r) => r.numero_cee || '-' },
+        { label: 'Désignation chimique', value: (r) => r.designation_chimique || '-' },
+        { label: "N° Autorisation", value: (r) => r.numero_autorisation },
         { label: 'Département', value: (r) => r.departement },
         { label: 'Acquis (mois)', value: (r) => `${r.acquis_mois} ${r.unite}` },
         { label: 'Utilisé (mois)', value: (r) => `${r.utilise_mois} ${r.unite}` },
-        { label: 'Cumul Acquis', value: (r) => `${r.cumul_acquis} ${r.unite}` },
-        { label: 'Cumul Utilisé', value: (r) => `${r.cumul_utilise} ${r.unite}` },
-        { label: 'Stock fin de mois', value: (r) => `${r.stock_fin_mois} ${r.unite}` },
+        { label: 'Quantité Acquise', value: (r) => `${r.cumul_acquis} ${r.unite}` },
+        { label: 'Quantité Restante', value: (r) => `${r.quantite_restante} ${r.unite}` },
+        { label: 'Stock', value: (r) => `${r.stock_fin_mois} ${r.unite}` },
       ],
       rows,
     });

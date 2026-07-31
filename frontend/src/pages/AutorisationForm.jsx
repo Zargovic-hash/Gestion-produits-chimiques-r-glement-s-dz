@@ -76,7 +76,7 @@ export default function AutorisationForm() {
   };
 
   return (
-    <div className="max-w-3xl">
+    <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-4">Nouvelle Autorisation</h1>
       <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6 space-y-4">
         <Alert type="error">{error}</Alert>
