@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getAutorisationById, deleteAutorisation, updateAutorisation } from '../api/autorisation.api';
-import { createAchat, deleteAchat } from '../api/achat.api';
-import { createUtilisation, deleteUtilisation } from '../api/utilisation.api';
+import { createAchat, updateAchat, deleteAchat } from '../api/achat.api';
+import { createUtilisation, updateUtilisation, deleteUtilisation } from '../api/utilisation.api';
 import { downloadAutorisationDetailReport } from '../api/report.api';
 import { useAuth } from '../context/AuthContext';
 import EtatBadge from '../components/common/EtatBadge';
+import EtatProduitBadge from '../components/common/EtatProduitBadge';
 import ProgressBar from '../components/common/ProgressBar';
 import Button from '../components/common/Button';
 import Alert from '../components/common/Alert';
@@ -22,8 +23,11 @@ export default function AutorisationDetail() {
 
   const [achatForm, setAchatForm] = useState(null); // autorisation_produit_id being purchased
   const [achatData, setAchatData] = useState(emptyAchatForm);
+  const [editingAchatId, setEditingAchatId] = useState(null); // null = creating, sinon = corrige cet achat
+
   const [utilForm, setUtilForm] = useState(null); // autorisation_produit_id being declared
   const [utilData, setUtilData] = useState(emptyUtilForm);
+  const [editingUtilId, setEditingUtilId] = useState(null);
 
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -40,16 +44,51 @@ export default function AutorisationDetail() {
 
   const openAchatForm = (produitId) => {
     setUtilForm(null);
+    setEditingUtilId(null);
     setAchatForm(produitId);
+    setEditingAchatId(null);
     setAchatData({ ...emptyAchatForm, date_achat: new Date().toISOString().split('T')[0] });
+    setError('');
+    setSuccess('');
+  };
+
+  const openAchatEdit = (achat) => {
+    setUtilForm(null);
+    setEditingUtilId(null);
+    setAchatForm(achat.autorisation_produit_id);
+    setEditingAchatId(achat.id);
+    setAchatData({
+      quantite_acquise: achat.quantite_acquise,
+      date_achat: new Date(achat.date_achat).toISOString().split('T')[0],
+      fournisseur: achat.fournisseur,
+      numero_facture: achat.numero_facture,
+      remarques: achat.remarques || '',
+    });
     setError('');
     setSuccess('');
   };
 
   const openUtilForm = (produitId) => {
     setAchatForm(null);
+    setEditingAchatId(null);
     setUtilForm(produitId);
+    setEditingUtilId(null);
     setUtilData({ ...emptyUtilForm, date_utilisation: new Date().toISOString().split('T')[0] });
+    setError('');
+    setSuccess('');
+  };
+
+  const openUtilEdit = (utilisation) => {
+    setAchatForm(null);
+    setEditingAchatId(null);
+    setUtilForm(utilisation.autorisation_produit_id);
+    setEditingUtilId(utilisation.id);
+    setUtilData({
+      quantite_utilisee: utilisation.quantite_utilisee,
+      date_utilisation: new Date(utilisation.date_utilisation).toISOString().split('T')[0],
+      objectif: utilisation.objectif || '',
+      remarques: utilisation.remarques || '',
+    });
     setError('');
     setSuccess('');
   };
@@ -59,9 +98,15 @@ export default function AutorisationDetail() {
     setSubmitting(true);
     setError('');
     try {
-      await createAchat({ autorisation_produit_id: achatForm, ...achatData });
-      setSuccess('Achat enregistré avec succès.');
+      if (editingAchatId) {
+        await updateAchat(editingAchatId, achatData);
+        setSuccess('Achat corrigé avec succès.');
+      } else {
+        await createAchat({ autorisation_produit_id: achatForm, ...achatData });
+        setSuccess('Achat enregistré avec succès.');
+      }
       setAchatForm(null);
+      setEditingAchatId(null);
       load();
     } catch (err) {
       setError(err.response?.data?.message || "Erreur lors de l'enregistrement");
@@ -75,9 +120,15 @@ export default function AutorisationDetail() {
     setSubmitting(true);
     setError('');
     try {
-      await createUtilisation({ autorisation_produit_id: utilForm, ...utilData });
-      setSuccess('Utilisation enregistrée avec succès.');
+      if (editingUtilId) {
+        await updateUtilisation(editingUtilId, utilData);
+        setSuccess('Utilisation corrigée avec succès.');
+      } else {
+        await createUtilisation({ autorisation_produit_id: utilForm, ...utilData });
+        setSuccess('Utilisation enregistrée avec succès.');
+      }
       setUtilForm(null);
+      setEditingUtilId(null);
       load();
     } catch (err) {
       setError(err.response?.data?.message || "Erreur lors de l'enregistrement");
@@ -161,7 +212,7 @@ export default function AutorisationDetail() {
               <th className="px-4 py-2">Qté Acquise</th>
               <th className="px-4 py-2">Qté Utilisée</th>
               <th className="px-4 py-2">Stock disponible</th>
-              <th className="px-4 py-2">% Acquis</th>
+              <th className="px-4 py-2">État Produit</th>
               {canAgir && <th className="px-4 py-2"></th>}
             </tr>
           </thead>
@@ -174,7 +225,7 @@ export default function AutorisationDetail() {
                 <td className="px-4 py-2">{p.quantite_acquise} {p.unite}</td>
                 <td className="px-4 py-2">{p.quantite_utilisee} {p.unite}</td>
                 <td className="px-4 py-2 font-medium">{p.stock_disponible} {p.unite}</td>
-                <td className="px-4 py-2">{p.pourcentage_acquis}%</td>
+                <td className="px-4 py-2"><EtatProduitBadge etat={p.etat_produit} /></td>
                 {canAgir && (
                   <td className="px-4 py-2 space-x-2 whitespace-nowrap">
                     <button
@@ -202,7 +253,7 @@ export default function AutorisationDetail() {
       {achatForm && produitAchat && (
         <div className="bg-white rounded-lg shadow p-4 border-2 border-primary-100">
           <h2 className="text-sm font-semibold text-gray-900 mb-3">
-            Enregistrer un achat — {produitAchat.designation_technique}
+            {editingAchatId ? 'Corriger un achat' : 'Enregistrer un achat'} — {produitAchat.designation_technique}
             {' '}<span className="text-gray-400 font-normal">(reste à acquérir : {produitAchat.reste_a_acquerir} {produitAchat.unite})</span>
           </h2>
           <Alert type="error">{error}</Alert>
@@ -253,9 +304,9 @@ export default function AutorisationDetail() {
               />
             </div>
             <div className="col-span-2 flex gap-3 justify-end">
-              <Button type="button" variant="secondary" onClick={() => setAchatForm(null)}>Annuler</Button>
+              <Button type="button" variant="secondary" onClick={() => { setAchatForm(null); setEditingAchatId(null); }}>Annuler</Button>
               <Button type="submit" disabled={submitting}>
-                {submitting ? 'Enregistrement...' : "Enregistrer l'Achat"}
+                {submitting ? 'Enregistrement...' : editingAchatId ? 'Corriger l\'Achat' : "Enregistrer l'Achat"}
               </Button>
             </div>
           </form>
@@ -265,7 +316,7 @@ export default function AutorisationDetail() {
       {utilForm && produitUtil && (
         <div className="bg-white rounded-lg shadow p-4 border-2 border-primary-100">
           <h2 className="text-sm font-semibold text-gray-900 mb-3">
-            Déclarer une utilisation — {produitUtil.designation_technique}
+            {editingUtilId ? 'Corriger une utilisation' : 'Déclarer une utilisation'} — {produitUtil.designation_technique}
             {' '}<span className="text-gray-400 font-normal">(stock disponible : {produitUtil.stock_disponible} {produitUtil.unite})</span>
           </h2>
           <Alert type="error">{error}</Alert>
@@ -307,9 +358,9 @@ export default function AutorisationDetail() {
               />
             </div>
             <div className="col-span-2 flex gap-3 justify-end">
-              <Button type="button" variant="secondary" onClick={() => setUtilForm(null)}>Annuler</Button>
+              <Button type="button" variant="secondary" onClick={() => { setUtilForm(null); setEditingUtilId(null); }}>Annuler</Button>
               <Button type="submit" disabled={submitting}>
-                {submitting ? 'Enregistrement...' : "Enregistrer l'Utilisation"}
+                {submitting ? 'Enregistrement...' : editingUtilId ? 'Corriger l\'Utilisation' : "Enregistrer l'Utilisation"}
               </Button>
             </div>
           </form>
@@ -340,14 +391,16 @@ export default function AutorisationDetail() {
                   <td className="px-4 py-2">{a.quantite_acquise} {a.unite}</td>
                   <td className="px-4 py-2">{a.fournisseur}</td>
                   <td className="px-4 py-2">{a.numero_facture}</td>
-                  <td className="px-4 py-2">
+                  <td className="px-4 py-2 space-x-2 whitespace-nowrap">
                     {(user.role === 'admin' || a.enregistre_par === user.id) && (
-                      <button
-                        onClick={() => handleDeleteAchat(a.id)}
-                        className="text-xs text-red-600 hover:underline"
-                      >
-                        Supprimer
-                      </button>
+                      <>
+                        <button onClick={() => openAchatEdit(a)} className="text-xs text-primary-500 hover:underline">
+                          Corriger
+                        </button>
+                        <button onClick={() => handleDeleteAchat(a.id)} className="text-xs text-red-600 hover:underline">
+                          Supprimer
+                        </button>
+                      </>
                     )}
                   </td>
                 </tr>
@@ -379,14 +432,16 @@ export default function AutorisationDetail() {
                   <td className="px-4 py-2">{u.designation_technique}</td>
                   <td className="px-4 py-2">{u.quantite_utilisee} {u.unite}</td>
                   <td className="px-4 py-2">{u.objectif || '-'}</td>
-                  <td className="px-4 py-2">
+                  <td className="px-4 py-2 space-x-2 whitespace-nowrap">
                     {(user.role === 'admin' || u.declare_par === user.id) && (
-                      <button
-                        onClick={() => handleDeleteUtil(u.id)}
-                        className="text-xs text-red-600 hover:underline"
-                      >
-                        Supprimer
-                      </button>
+                      <>
+                        <button onClick={() => openUtilEdit(u)} className="text-xs text-primary-500 hover:underline">
+                          Corriger
+                        </button>
+                        <button onClick={() => handleDeleteUtil(u.id)} className="text-xs text-red-600 hover:underline">
+                          Supprimer
+                        </button>
+                      </>
                     )}
                   </td>
                 </tr>

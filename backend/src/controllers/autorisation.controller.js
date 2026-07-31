@@ -78,7 +78,8 @@ const getById = async (req, res, next) => {
           ELSE 0 END AS pourcentage_acquis,
         CASE WHEN quantite_acquise > 0
           THEN ROUND((quantite_utilisee / quantite_acquise) * 100, 2)
-          ELSE 0 END AS pourcentage_utilise
+          ELSE 0 END AS pourcentage_utilise,
+        calculer_etat_produit(quantite_autorisee, quantite_acquise) AS etat_produit
        FROM autorisation_produits WHERE autorisation_id = $1 ORDER BY product_code`,
       [id]
     );

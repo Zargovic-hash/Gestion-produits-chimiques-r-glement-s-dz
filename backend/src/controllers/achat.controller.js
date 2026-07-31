@@ -34,6 +34,20 @@ const getAll = async (req, res, next) => {
   }
 };
 
+// Validation : la date d'achat doit être dans la période de validité de l'autorisation (comme le VBA)
+const assertDateDansValidite = (date, dateDelivrance, dateEcheance) => {
+  const d = new Date(date);
+  const debut = new Date(dateDelivrance);
+  const fin = new Date(dateEcheance);
+  if (d < debut || d > fin) {
+    throw new AppError(
+      `La date (${new Date(date).toLocaleDateString('fr-FR')}) doit être comprise entre la date de délivrance ` +
+      `(${debut.toLocaleDateString('fr-FR')}) et la date d'échéance (${fin.toLocaleDateString('fr-FR')}) de l'autorisation.`,
+      400
+    );
+  }
+};
+
 const create = async (req, res, next) => {
   try {
     const {
@@ -84,7 +98,10 @@ const create = async (req, res, next) => {
         throw new AppError('Cette autorisation est expirée. Aucun achat ne peut être enregistré.', 400);
       }
 
-      // Validation 2 : quantité disponible
+      // Validation 2 : date dans la période de validité de l'autorisation
+      assertDateDansValidite(date_achat, produit.date_delivrance, produit.date_echeance);
+
+      // Validation 3 : quantité disponible
       const resteDisponible = parseFloat(produit.quantite_autorisee) - parseFloat(produit.quantite_acquise);
       if (qte > resteDisponible) {
         throw new AppError(
@@ -132,10 +149,8 @@ const create = async (req, res, next) => {
   }
 };
 
-const assertOwnerOrAdmin = async (achatId, user) => {
-  const { rows } = await query('SELECT enregistre_par FROM achats WHERE id = $1', [achatId]);
-  if (rows.length === 0) throw new AppError('Achat non trouvé', 404);
-  if (user.role !== 'admin' && rows[0].enregistre_par !== user.id) {
+const assertOwnerOrAdmin = (achat, user) => {
+  if (user.role !== 'admin' && achat.enregistre_par !== user.id) {
     throw new AppError(
       "Seul le Responsable Stock qui a créé cet achat ou un administrateur peut le modifier",
       403
@@ -143,32 +158,89 @@ const assertOwnerOrAdmin = async (achatId, user) => {
   }
 };
 
+// Correction d'un achat (équivalent de CorrigerAchat() en VBA) : permet de modifier la
+// quantité elle-même, avec recalcul automatique du stock de l'autorisation concernée.
 const update = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { fournisseur, numero_facture, remarques, date_achat } = req.body;
+    const { fournisseur, numero_facture, remarques, date_achat, quantite_acquise } = req.body;
 
-    await assertOwnerOrAdmin(id, req.user);
+    const achat = await withTransaction(async (client) => {
+      const { rows } = await client.query('SELECT * FROM achats WHERE id = $1 FOR UPDATE', [id]);
+      if (rows.length === 0) throw new AppError('Achat non trouvé', 404);
+      const achatActuel = rows[0];
 
-    const fields = [];
-    const values = [];
-    let i = 1;
-    if (fournisseur !== undefined) { fields.push(`fournisseur = $${i++}`); values.push(fournisseur); }
-    if (numero_facture !== undefined) { fields.push(`numero_facture = $${i++}`); values.push(numero_facture); }
-    if (remarques !== undefined) { fields.push(`remarques = $${i++}`); values.push(remarques); }
-    if (date_achat !== undefined) { fields.push(`date_achat = $${i++}`); values.push(date_achat); }
-    if (fields.length === 0) throw new AppError('Aucune modification fournie', 400);
+      assertOwnerOrAdmin(achatActuel, req.user);
 
-    values.push(id);
-    const { rows } = await query(
-      `UPDATE achats SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`,
-      values
-    );
-    if (rows.length === 0) throw new AppError('Achat non trouvé', 404);
+      const { rows: prodRows } = await client.query(
+        `SELECT ap.*, au.date_delivrance, au.date_echeance
+         FROM autorisation_produits ap
+         JOIN autorisations au ON au.id = ap.autorisation_id
+         WHERE ap.id = $1 FOR UPDATE`,
+        [achatActuel.autorisation_produit_id]
+      );
+      const produit = prodRows[0];
+
+      const nouvelleDate = date_achat !== undefined ? date_achat : achatActuel.date_achat;
+      assertDateDansValidite(nouvelleDate, produit.date_delivrance, produit.date_echeance);
+
+      let nouvelleQuantite = parseFloat(achatActuel.quantite_acquise);
+      if (quantite_acquise !== undefined) {
+        nouvelleQuantite = parseFloat(quantite_acquise);
+        if (isNaN(nouvelleQuantite) || nouvelleQuantite <= 0) {
+          throw new AppError('La quantité acquise doit être un nombre positif', 400);
+        }
+        // Stock avant achat = stock actuel - ancienne quantité (logique VBA CorrigerAchat)
+        const resteAvantCetAchat =
+          parseFloat(produit.quantite_autorisee) -
+          (parseFloat(produit.quantite_acquise) - parseFloat(achatActuel.quantite_acquise));
+        if (nouvelleQuantite > resteAvantCetAchat) {
+          throw new AppError(
+            `La nouvelle quantité (${nouvelleQuantite}) dépasse le reste disponible (${resteAvantCetAchat}).`,
+            400
+          );
+        }
+      }
+
+      const fields = [];
+      const values = [];
+      let i = 1;
+      if (fournisseur !== undefined) { fields.push(`fournisseur = $${i++}`); values.push(fournisseur); }
+      if (numero_facture !== undefined) { fields.push(`numero_facture = $${i++}`); values.push(numero_facture); }
+      if (remarques !== undefined) { fields.push(`remarques = $${i++}`); values.push(remarques); }
+      if (date_achat !== undefined) { fields.push(`date_achat = $${i++}`); values.push(date_achat); }
+      if (quantite_acquise !== undefined) { fields.push(`quantite_acquise = $${i++}`); values.push(nouvelleQuantite); }
+      if (fields.length === 0) throw new AppError('Aucune modification fournie', 400);
+
+      values.push(id);
+      const { rows: updated } = await client.query(
+        `UPDATE achats SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`,
+        values
+      );
+
+      if (quantite_acquise !== undefined) {
+        const delta = nouvelleQuantite - parseFloat(achatActuel.quantite_acquise);
+        await client.query(
+          'UPDATE autorisation_produits SET quantite_acquise = quantite_acquise + $1 WHERE id = $2',
+          [delta, achatActuel.autorisation_produit_id]
+        );
+      }
+
+      return { updated: updated[0], autorisationProduitId: achatActuel.autorisation_produit_id };
+    });
+
+    if (quantite_acquise !== undefined) {
+      const { rows } = await query('SELECT autorisation_id FROM autorisation_produits WHERE id = $1', [
+        achat.autorisationProduitId,
+      ]);
+      checkAutorisationAlerts(rows[0].autorisation_id).catch((err) =>
+        console.error('Erreur lors de la génération des alertes :', err)
+      );
+    }
 
     await logAction(req.user.id, 'UPDATE', 'achat', id, req.body);
 
-    res.json({ success: true, data: rows[0] });
+    res.json({ success: true, data: achat.updated });
   } catch (error) {
     next(error);
   }
@@ -186,12 +258,7 @@ const remove = async (req, res, next) => {
       if (rows.length === 0) throw new AppError('Achat non trouvé', 404);
       const achat = rows[0];
 
-      if (req.user.role !== 'admin' && achat.enregistre_par !== req.user.id) {
-        throw new AppError(
-          "Seul le Responsable Stock qui a créé cet achat ou un administrateur peut le supprimer",
-          403
-        );
-      }
+      assertOwnerOrAdmin(achat, req.user);
 
       await client.query('DELETE FROM achats WHERE id = $1', [id]);
 

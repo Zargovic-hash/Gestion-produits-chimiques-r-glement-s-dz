@@ -8,6 +8,7 @@ router.use(authenticateToken);
 
 router.get('/', utilisationController.getAll);
 router.post('/', checkRole('admin', 'responsable_stock'), utilisationController.create);
+router.put('/:id', checkRole('admin', 'responsable_stock'), utilisationController.update);
 router.delete('/:id', checkRole('admin', 'responsable_stock'), utilisationController.remove);
 
 module.exports = router;

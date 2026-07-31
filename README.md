@@ -15,12 +15,15 @@ Périmètre actuel : **Phase 1 (Acquisition)** — Canevas, Autorisations, Achat
 - **Canevas** : modèles de produits réutilisables, immuables après création (duplication possible)
 - **Autorisations** : création depuis un Canevas ou manuellement, état calculé dynamiquement (Active / Presque Épuisée / Épuisée / Presque Expirée / Expirée), archivage manuel des autorisations expirées
 - **Achats** : enregistrement transactionnel avec verrou de ligne, blocage si dépassement de quantité ou autorisation expirée ; modification/suppression réservées au créateur ou à un admin
-- **Notifications** : alertes automatiques (seuils 80/90 %, échéance ≤ 30 jours) déclenchées à chaque achat et vérifiées quotidiennement par un scheduler ; cloche in-app avec compteur
-- **Rapports** : 6 rapports (État des Autorisations, Détail d'une Autorisation — avec sections Achats et Utilisations, Historique des Achats, Produits les Plus Acquis, Performance par Département, Déclaration Mensuelle par Autorisation), export PDF et CSV
-- **Tableau de bord** : répartition par état (camembert), % moyen d'acquisition (jauge), évolution des achats (courbe), top 10 produits (barres) ; vue restreinte pour le Responsable Stock (son département) et le Visiteur (pas de détail nominatif)
+- **Notifications** : alertes automatiques déclenchées à chaque achat/utilisation et vérifiées quotidiennement par un scheduler — échéance à 3 paliers (90/60/30 jours, comme le système VBA de référence), rappel « achat requis avant expiration » si une autorisation approche de l'échéance avec du reste à acquérir, seuils d'épuisement (80/90 %), rupture de stock ; cloche in-app avec compteur
+- **Rapports** : 6 rapports (État des Autorisations — une ligne par produit avec N° ONU/CAS/CEE et désignation chimique, Détail d'une Autorisation, Historique des Achats, Produits les Plus Acquis, Performance par Département, Déclaration Mensuelle par Autorisation), export PDF et CSV
+- **Tableau de bord** : vue décisionnelle en tête (calendrier des échéances sur 2 mois, liste priorisée des décisions à prendre — renouvellements, achats à finaliser, ruptures de stock) puis statistiques (répartition par état, % moyen d'acquisition, évolution des achats, top 10 produits) ; vue restreinte pour le Responsable Stock (son département) et le Visiteur (pas de détail nominatif)
 - **Piste d'audit** : traçabilité qui/quoi/quand des créations, modifications et suppressions, consultable par l'administrateur
-- **Utilisations (Phase 2)** : une utilisation cible un produit d'une autorisation précise (comme un achat) — le Responsable Stock ou l'Admin la déclare depuis la page de l'autorisation, avec blocage si la quantité dépasse ce qui a été acquis sous cette autorisation
+- **Utilisations (Phase 2)** : une utilisation cible un produit d'une autorisation précise (comme un achat) — le Responsable Stock ou l'Admin la déclare depuis la page de l'autorisation, avec blocage si la quantité dépasse ce qui a été acquis sous cette autorisation, ou si la date sort de la période de validité
+- **Correction d'achats/utilisations** : la quantité elle-même est modifiable après coup (pas seulement fournisseur/date/remarques), avec recalcul automatique du stock impacté — équivalent de `CorrigerAchat()`/`ModifierUtilisation()` dans le système VBA de référence
+- **État par produit** : en plus de l'état global de l'autorisation, chaque produit a son propre état discret (Non acquis / Acquis / Acquisition Partielle / Acquisition Critique / Acquis Complet), comme le système VBA de référence
 - **Stock** : page agrégée (toutes autorisations confondues) par produit/département = Σ acquis − Σ utilisé ; seuils minimum configurables par l'Admin, avec alerte automatique (Faible / Critique) dès qu'un seuil est atteint
+- **Saisie des produits** : vue tableau (type tableur, par défaut) ou vue cartes (secondaire, au choix) pour la création de Canevas et d'Autorisations
 
 ## Prérequis
 
@@ -45,6 +48,7 @@ psql -U chemapp -d gestion_chimique -f backend/src/db/schema.sql
 psql -U chemapp -d gestion_chimique -f backend/src/db/migration_002_notifications.sql
 psql -U chemapp -d gestion_chimique -f backend/src/db/migration_003_utilisation.sql
 psql -U chemapp -d gestion_chimique -f backend/src/db/migration_004_utilisation_par_autorisation.sql
+psql -U chemapp -d gestion_chimique -f backend/src/db/migration_005_etat_produit.sql
 ```
 
 (`migration_004` remplace le modèle initial de stock par produit/département par un modèle par autorisation — cf. Notes de conception. Si `migration_003` n'a jamais été appliquée sur cette base, `migration_004` échouera ; dans ce cas, appliquer directement `schema.sql` à jour sur une base neuve.)
@@ -109,6 +113,8 @@ frontend/
 - Les **notifications** sont dédupliquées sur une fenêtre de 24h par (utilisateur, référence, type) pour éviter le spam — la référence est l'autorisation pour les alertes d'acquisition, ou `product_code:departement` pour les alertes de stock agrégé.
 - Une **utilisation** cible `autorisation_produit_id`, exactement comme un achat : `autorisation_produits.quantite_utilisee` est incrémentée sous verrou de ligne (`FOR UPDATE`), et la validation de dépassement se fait contre le stock *de cette autorisation* (`quantite_acquise − quantite_utilisee`), pas contre un pot global. C'est ce qui permet de retracer, pour une autorisation donnée, tout ce qui a été acheté et utilisé sous son couvert (cf. Rapport 2 et la Déclaration Mensuelle).
 - La page **Stock** reste une vue agrégée en lecture seule (Σ sur toutes les autorisations, par produit/département) — utile pour une vision d'ensemble, mais la déclaration se fait toujours depuis l'autorisation concernée.
+- La **date** d'un achat ou d'une utilisation doit être comprise entre la date de délivrance et la date d'échéance de l'autorisation — bloqué sinon (comme le système VBA de référence), contrairement à la version précédente qui ne vérifiait pas ce point.
+- Le tableau de bord de rupture de stock ne remonte que les produits déjà approvisionnés au moins une fois (ou dotés d'un seuil configuré) — sinon chaque produit jamais acheté apparaîtrait comme une fausse alerte de rupture.
 
 ## Hors périmètre
 

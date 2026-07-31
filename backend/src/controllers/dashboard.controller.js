@@ -53,10 +53,24 @@ const getStats = async (req, res, next) => {
     evolutionSql += ' GROUP BY 1 ORDER BY 1';
     top10Sql += ' GROUP BY ap.product_code ORDER BY quantite_totale DESC LIMIT 10';
 
-    const [achatsCount, evolution, top10] = await Promise.all([
+    // Ne remonter que les ruptures "réelles" (déjà approvisionné au moins une fois, ou
+    // un seuil a été volontairement configuré) — sinon tout produit jamais acheté
+    // apparaîtrait comme une fausse alerte de rupture.
+    let stockSql = `
+      SELECT * FROM v_stock_produits
+      WHERE statut != 'OK' AND (quantite_acquise_totale > 0 OR stock_minimum > 0)`;
+    const stockParams = [];
+    if (isResponsable) {
+      stockParams.push(req.user.departement);
+      stockSql += ` AND departement = $${stockParams.length}`;
+    }
+    stockSql += " ORDER BY (statut = 'CRITIQUE') DESC, product_code LIMIT 20";
+
+    const [achatsCount, evolution, top10, stockCritique] = await Promise.all([
       query(achatsCountSql, achatParams),
       query(evolutionSql, achatParams),
       query(top10Sql, achatParams),
+      query(stockSql, stockParams),
     ]);
 
     const data = {
@@ -70,6 +84,19 @@ const getStats = async (req, res, next) => {
       alertes_critiques: rows.filter((r) =>
         ['EXPIREE', 'PRESQUE_EXPIREE', 'PRESQUE_EPUISEE', 'EPUISEE'].includes(r.etat)
       ),
+      // Vue légère de toutes les autorisations actives, pour le calendrier des échéances
+      // et la liste de décisions du tableau de bord (pas de détails produits/achats).
+      autorisations_liste: rows
+        .filter((r) => r.etat !== 'EXPIREE')
+        .map((r) => ({
+          id: r.id,
+          numero_autorisation: r.numero_autorisation,
+          date_echeance: r.date_echeance,
+          jours_restants: r.jours_restants,
+          etat: r.etat,
+          pourcentage_acquis: r.pourcentage_acquis,
+        })),
+      stock_critique: stockCritique.rows,
     };
 
     // Le Visiteur n'a pas accès au détail nominatif de l'activité récente (spec §5.1)

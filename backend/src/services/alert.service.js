@@ -66,17 +66,38 @@ const checkAutorisationAlerts = async (autorisationId) => {
       });
     }
   }
-  // Expiration proche (≤ 30 jours)
-  else if (joursRestants <= 30) {
+  // Paliers d'expiration proche, comme le système VBA de référence (90 / 60 / 30 jours)
+  else if (joursRestants <= 90) {
+    let palier, priorite;
+    if (joursRestants <= 30) { palier = 30; priorite = joursRestants <= 7 ? 'CRITICAL' : 'HIGH'; }
+    else if (joursRestants <= 60) { palier = 60; priorite = 'MEDIUM'; }
+    else { palier = 90; priorite = 'LOW'; }
+
     for (const admin of admins) {
       await notify({
         userId: admin.id,
         autorisationId,
+        reference: `palier-${palier}`,
         type: 'EXPIRATION_PROCHE',
-        priorite: joursRestants <= 7 ? 'CRITICAL' : 'HIGH',
-        titre: 'Autorisation bientôt expirée',
-        message: `L'autorisation ${auth.numero_autorisation} expire dans ${joursRestants} jour(s).`,
+        priorite,
+        titre: `Autorisation bientôt expirée (≤ ${palier} jours)`,
+        message: `L'autorisation ${auth.numero_autorisation} expire dans ${joursRestants} jour(s) (le ${new Date(auth.date_echeance).toLocaleDateString('fr-FR')}).`,
       });
+    }
+
+    // Rappel : s'il reste des quantités à acquérir alors que l'échéance approche
+    if (pctAcquis < 100) {
+      for (const admin of admins) {
+        await notify({
+          userId: admin.id,
+          autorisationId,
+          reference: `achat-requis-${palier}`,
+          type: 'ACHAT_REQUIS_AVANT_EXPIRATION',
+          priorite: joursRestants <= 30 ? 'CRITICAL' : 'HIGH',
+          titre: 'Achat requis avant expiration',
+          message: `L'autorisation ${auth.numero_autorisation} n'est acquise qu'à ${pctAcquis}% et expire dans ${joursRestants} jour(s). Pensez à finaliser les achats restants avant l'échéance.`,
+        });
+      }
     }
   }
 

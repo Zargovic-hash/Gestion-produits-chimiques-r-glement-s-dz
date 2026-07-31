@@ -162,6 +162,35 @@ END;
 $$ LANGUAGE plpgsql STABLE;
 
 -- ============================================================
+-- FONCTION : état discret par produit (comme le système VBA de référence),
+-- en complément de l'état global par autorisation ci-dessus.
+-- ============================================================
+CREATE OR REPLACE FUNCTION calculer_etat_produit(p_quantite_autorisee NUMERIC, p_quantite_acquise NUMERIC)
+RETURNS VARCHAR AS $$
+DECLARE
+    v_reste_pct NUMERIC;
+BEGIN
+    IF p_quantite_acquise <= 0 THEN
+        RETURN 'NON_ACQUIS';
+    END IF;
+
+    IF p_quantite_acquise >= p_quantite_autorisee THEN
+        RETURN 'ACQUIS_COMPLET';
+    END IF;
+
+    v_reste_pct := ((p_quantite_autorisee - p_quantite_acquise) / p_quantite_autorisee) * 100;
+
+    IF v_reste_pct < 20 THEN
+        RETURN 'ACQUISITION_CRITIQUE';
+    ELSIF v_reste_pct > 50 THEN
+        RETURN 'ACQUISITION_PARTIELLE';
+    ELSE
+        RETURN 'ACQUIS';
+    END IF;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- ============================================================
 -- VUE : autorisations avec état et pourcentages calculés
 -- ============================================================
 CREATE OR REPLACE VIEW v_autorisations AS
@@ -202,7 +231,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     reference VARCHAR(255),
     type VARCHAR(50) NOT NULL CHECK (type IN (
         'EXPIRATION_PROCHE', 'EXPIREE', 'PRESQUE_EPUISEE', 'PRODUIT_PRESQUE_EPUISE',
-        'STOCK_FAIBLE', 'STOCK_CRITIQUE'
+        'STOCK_FAIBLE', 'STOCK_CRITIQUE', 'ACHAT_REQUIS_AVANT_EXPIRATION'
     )),
     priorite VARCHAR(20) NOT NULL DEFAULT 'MEDIUM' CHECK (priorite IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')),
     titre VARCHAR(255) NOT NULL,

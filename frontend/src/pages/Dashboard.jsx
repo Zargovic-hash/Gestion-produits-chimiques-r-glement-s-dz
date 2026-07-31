@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -7,7 +6,8 @@ import {
   RadialBarChart, RadialBar,
 } from 'recharts';
 import { getDashboard } from '../api/dashboard.api';
-import EtatBadge from '../components/common/EtatBadge';
+import EcheanceCalendar from '../components/dashboard/EcheanceCalendar';
+import DecisionList from '../components/dashboard/DecisionList';
 
 const STAT_CARDS = [
   { key: 'ACTIVE', label: 'Actives' },
@@ -52,84 +52,104 @@ export default function Dashboard() {
 
   const gaugeData = [{ name: 'Moyenne', value: data.moyenne_pourcentage_acquis, fill: '#001965' }];
 
+  const aRenouvelerCount = data.autorisations_liste.filter((a) => a.jours_restants <= 30).length;
+  const achatRequisCount = data.autorisations_liste.filter(
+    (a) => a.jours_restants <= 60 && parseFloat(a.pourcentage_acquis) < 100
+  ).length;
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Tableau de bord</h1>
 
+      {/* KPI decisionnels */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg shadow p-4">
-          <div className="text-xs text-gray-500">Autorisations</div>
-          <div className="text-2xl font-bold text-gray-900">{data.total_autorisations}</div>
+          <div className="text-xs text-gray-500">Autorisations actives</div>
+          <div className="text-2xl font-bold text-gray-900">{data.par_etat.ACTIVE + data.par_etat.PRESQUE_EPUISEE + data.par_etat.PRESQUE_EXPIREE}</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4">
-          <div className="text-xs text-gray-500">Canevas</div>
-          <div className="text-2xl font-bold text-gray-900">{data.total_canevas}</div>
+          <div className="text-xs text-gray-500">À renouveler (≤ 30j)</div>
+          <div className={`text-2xl font-bold ${aRenouvelerCount > 0 ? 'text-orange-600' : 'text-gray-900'}`}>{aRenouvelerCount}</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4">
-          <div className="text-xs text-gray-500">Achats enregistrés</div>
-          <div className="text-2xl font-bold text-gray-900">{data.total_achats}</div>
+          <div className="text-xs text-gray-500">Achats à finaliser</div>
+          <div className={`text-2xl font-bold ${achatRequisCount > 0 ? 'text-amber-600' : 'text-gray-900'}`}>{achatRequisCount}</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4">
-          <div className="text-xs text-gray-500">Alertes critiques</div>
-          <div className="text-2xl font-bold text-red-600">{data.alertes_critiques.length}</div>
+          <div className="text-xs text-gray-500">Stock en alerte</div>
+          <div className={`text-2xl font-bold ${data.stock_critique.length > 0 ? 'text-red-600' : 'text-gray-900'}`}>{data.stock_critique.length}</div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-lg shadow p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">Répartition par état</h2>
-          {pieData.length === 0 ? (
-            <div className="text-sm text-gray-400 py-8 text-center">Aucune autorisation.</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75} label>
-                  {pieData.map((entry) => (
-                    <Cell key={entry.etat} fill={ETAT_COLORS[entry.etat]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
+      {/* Vue décisionnelle : calendrier + actions prioritaires */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2">
+          <EcheanceCalendar autorisations={data.autorisations_liste} />
         </div>
+        <div>
+          <DecisionList autorisations={data.autorisations_liste} stockCritique={data.stock_critique} />
+        </div>
+      </div>
 
-        <div className="bg-white rounded-lg shadow p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">
-            % moyen d'acquisition (autorisations non expirées)
-          </h2>
-          <ResponsiveContainer width="100%" height={200}>
-            <RadialBarChart
-              innerRadius="70%"
-              outerRadius="100%"
-              data={gaugeData}
-              startAngle={180}
-              endAngle={0}
-              barSize={20}
-            >
-              <RadialBar dataKey="value" cornerRadius={10} background max={100} />
-            </RadialBarChart>
-          </ResponsiveContainer>
-          <div className="text-center -mt-16 text-3xl font-bold text-primary-500">
-            {data.moyenne_pourcentage_acquis}%
+      {/* Statistiques (support à la décision de second niveau) */}
+      <div>
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Statistiques</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white rounded-lg shadow p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Répartition par état</h3>
+            {pieData.length === 0 ? (
+              <div className="text-sm text-gray-400 py-8 text-center">Aucune autorisation.</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75} label>
+                    {pieData.map((entry) => (
+                      <Cell key={entry.etat} fill={ETAT_COLORS[entry.etat]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </div>
-        </div>
 
-        <div className="bg-white rounded-lg shadow p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">Évolution des achats (6 mois)</h2>
-          {data.evolution_achats.length === 0 ? (
-            <div className="text-sm text-gray-400 py-8 text-center">Aucun achat sur la période.</div>
-          ) : (
+          <div className="bg-white rounded-lg shadow p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">
+              % moyen d'acquisition (autorisations non expirées)
+            </h3>
             <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={data.evolution_achats}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="mois" fontSize={10} />
-                <YAxis fontSize={10} />
-                <Tooltip />
-                <Line type="monotone" dataKey="nb_achats" stroke="#001965" strokeWidth={2} name="Nb achats" />
-              </LineChart>
+              <RadialBarChart
+                innerRadius="70%"
+                outerRadius="100%"
+                data={gaugeData}
+                startAngle={180}
+                endAngle={0}
+                barSize={20}
+              >
+                <RadialBar dataKey="value" cornerRadius={10} background max={100} />
+              </RadialBarChart>
             </ResponsiveContainer>
-          )}
+            <div className="text-center -mt-16 text-3xl font-bold text-primary-500">
+              {data.moyenne_pourcentage_acquis}%
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Évolution des achats (6 mois)</h3>
+            {data.evolution_achats.length === 0 ? (
+              <div className="text-sm text-gray-400 py-8 text-center">Aucun achat sur la période.</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={data.evolution_achats}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="mois" fontSize={10} />
+                  <YAxis fontSize={10} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="nb_achats" stroke="#001965" strokeWidth={2} name="Nb achats" />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
         </div>
       </div>
 
@@ -161,29 +181,6 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
-
-      {data.alertes_critiques.length > 0 && (
-        <div className="bg-white rounded-lg shadow p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">Alertes actives</h2>
-          <div className="space-y-2">
-            {data.alertes_critiques.map((a) => (
-              <Link
-                key={a.id}
-                to={`/autorisations/${a.id}`}
-                className="flex items-center justify-between border border-gray-200 rounded-md px-3 py-2 hover:bg-gray-50"
-              >
-                <div>
-                  <div className="text-sm font-medium text-gray-900">{a.numero_autorisation}</div>
-                  <div className="text-xs text-gray-500">
-                    {a.jours_restants} jour(s) restant(s) · {a.pourcentage_acquis}% acquis
-                  </div>
-                </div>
-                <EtatBadge etat={a.etat} />
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
 
       {data.activite_recente && (
         <div className="bg-white rounded-lg shadow p-4">
